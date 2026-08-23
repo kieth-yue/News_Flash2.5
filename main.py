@@ -632,8 +632,15 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         if source_domains:
             print(f"📡 新聞源: {', '.join(source_domains)}")
     else:
-        source_domains = []
-        print("⚠️ Gemini 冇返回任何 grounding URL（可能冇使用搜尋工具）")
+        # fallback：grounding metadata 為空時，從回應文本提取 vertexaisearch 連結
+        text_urls = re.findall(r'https?://vertexaisearch\.cloud\.google\.com/[^\s\)\]]+', llm_result)
+        if text_urls:
+            grounding_urls = [("來源", u) for u in text_urls]
+            source_domains = ["vertexaisearch.cloud.google.com"]
+            print(f"🔗 Grounding 來源（從文本提取）: {len(text_urls)} 個搜尋連結")
+        else:
+            source_domains = []
+            print("⚠️ Gemini 冇返回任何 grounding URL（可能冇使用搜尋工具）")
     # 檢查有冇實質內容
     has_section = "【板塊宏觀消息】" in llm_result or "【個股重大利好" in llm_result
     has_news_emoji = "📰" in llm_result
