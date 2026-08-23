@@ -21,6 +21,7 @@ import yaml
 from google import genai
 from google.genai import types
 import requests
+from urllib.parse import urlparse
 # ============================================================
 # 常量
 # ============================================================
@@ -419,6 +420,18 @@ def extract_grounding_urls(response):
     except Exception as e:
         print(f"⚠️ 提取 grounding URL 失敗: {e}")
     return urls
+def count_source_domains(grounding_urls):
+    """從 grounding URL 統計獨立新聞源域名數量同域名列表"""
+    domains = set()
+    for _, uri in grounding_urls:
+        try:
+            parsed = urlparse(uri)
+            domain = parsed.netloc.lower().replace("www.", "")
+            if domain and "vertexaisearch" not in domain and "google.com" not in domain:
+                domains.add(domain)
+        except Exception:
+            continue
+    return sorted(domains)
 SYSTEM_INSTRUCTION = (
     "你係港股新聞分析員。你必須嚴格按照用戶指定嘅格式輸出，使用繁體中文。"
     "禁止使用 Markdown 標題（**文字**）、項目符號（* 或 -）、編號列表、英文分析散文。"
@@ -613,31 +626,14 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
     if len(llm_result) > 2000:
         print(f"...（省略 {len(llm_result) - 2000} 字元）")
     if grounding_urls:
-        print(f"🔗 Grounding 來源: {len(grounding_urls)} 個 URL")
-    # 自動重試：回應太短 + 話無新聞 + 冇 grounding URL → 可能冇搜尋
-    # 喺同一個 chat 對話入面追問，等 Gemini 見到自己上次偷懶嘅回應
-    if (len(llm_result) < 200 and is_no_news(llm_result)
-            and not grounding_urls and "📰" not in llm_result):
-        print("⚠️ Gemini 冇搜尋就答無新聞，喺同一對話中強制追問...")
-        time.sleep(3)
-        followup = (
-            "🚨 你剛才冇使用 Google 搜尋工具就直接答「無新聞」，呢個係違規！"
-            "請你立即使用 Google 搜尋工具，搜尋以下關鍵詞：\n"
-            "1. 港股 盈喜 2026年8月\n"
-            "2. 港股 中期業績 淨利潤 增長\n"
-            "3. 港股 上調目標價\n"
-            "4. site:cls.cn 港股 公告\n"
-            "搜尋後根據真實結果，按照格式重新輸出。唔好再話無新聞，除非你真係搜過。"
-        )
-        llm_result, grounding_urls, chat, quota_exhausted = gemini_call(followup, config, chat=chat)
-        if quota_exhausted:
-            return "quota_exhausted"
-        print(f"=== 追問回應 ({len(llm_result)} 字元) ===")
-        print(llm_result[:2000])
-        if len(llm_result) > 2000:
-            print(f"...（省略 {len(llm_result) - 2000} 字元）")
-        if grounding_urls:
-            print(f"🔗 追問 Grounding 來源: {len(grounding_urls)} 個 URL")
+        source_domains = count_source_domains(grounding_urls)
+        print(f"🔗 Grounding 來源: {len(grounding_urls)} 個 URL，"
+              f"{len(source_domains)} 個獨立新聞源")
+        if source_domains:
+            print(f"📡 新聞源: {', '.join(source_domains)}")
+    else:
+        source_domains = []
+        print("⚠️ Gemini 冇返回任何 grounding URL（可能冇使用搜尋工具）")
     # 檢查有冇實質內容
     has_section = "【板塊宏觀消息】" in llm_result or "【個股重大利好" in llm_result
     has_news_emoji = "📰" in llm_result
@@ -768,6 +764,9 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         parts.append("\n\n".join(stock_entries))
     final_text = "\n\n".join(parts)
     final_text = format_links(final_text)
+    # 附加搜尋來源統計
+    if source_domains:
+        final_text += f"\n\n---\n📡 本次搜尋咗 {len(source_domains)} 個新聞源：{', '.join(source_domains)}"
     send_feishu(final_text, config)
     save_cache(cache, config)
     return True
