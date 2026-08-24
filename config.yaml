@@ -36,8 +36,8 @@ grace_minutes: 30
 
 # ========== 掃描頻率 ==========
 scan:
-  interval_min_min: 5     # 最短休眠（分鐘）
-  interval_min_max: 8    # 最長休眠（分鐘）
+  interval_min_min: 7     # 最短休眠（分鐘）
+  interval_min_max: 10    # 最長休眠（分鐘）
 
 # ========== 新聞過濾 ==========
 # 注意：金額門檻、利好判定等全部由 Prompt 規則控制（Gemini 聯網判斷）
