@@ -125,7 +125,11 @@ def is_session_over(session_name, hkt, config):
     s = config["sessions"].get(session_name)
     if not s:
         return True
+    sh, sm = map(int, s["start"].split(":"))
     eh, em = map(int, s["end"].split(":"))
+    # 跨午夜保護：如果當前小時早過 session 開始小時，即係過咗午夜，session 已結束
+    if hkt.hour < sh:
+        return True
     end_dt = hkt.replace(hour=eh, minute=em, second=0, microsecond=0)
     return hkt >= end_dt
 def get_force_run_session(hkt):
