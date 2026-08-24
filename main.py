@@ -421,17 +421,26 @@ def extract_grounding_urls(response):
         print(f"⚠️ 提取 grounding URL 失敗: {e}")
     return urls
 def count_source_domains(grounding_urls):
-    """從 grounding URL 統計獨立新聞源域名數量同域名列表"""
+    """從 grounding URL 統計獨立新聞源。
+    返回 (domains_list, vertex_count)：
+    - domains_list：原始域名列表（過濾 Google 自己嘅域名）
+    - vertex_count：vertexaisearch 導流連結數量（Gemma 可能返回呢類 URL）
+    """
     domains = set()
+    vertex_count = 0
     for _, uri in grounding_urls:
         try:
             parsed = urlparse(uri)
             domain = parsed.netloc.lower().replace("www.", "")
-            if domain and "vertexaisearch" not in domain and "google.com" not in domain:
+            if not domain:
+                continue
+            if "vertexaisearch" in domain:
+                vertex_count += 1
+            elif "google.com" not in domain:
                 domains.add(domain)
         except Exception:
             continue
-    return sorted(domains)
+    return sorted(domains), vertex_count
 SYSTEM_INSTRUCTION = (
     "你係港股新聞分析員。你必須嚴格按照用戶指定嘅格式輸出，使用繁體中文。"
     "禁止使用 Markdown 標題（**文字**）、項目符號（* 或 -）、編號列表、英文分析散文。"
@@ -460,6 +469,7 @@ def gemini_call(prompt, config, chat=None):
         temperature=0.2,
         system_instruction=SYSTEM_INSTRUCTION,
         tools=[types.Tool(google_search=types.GoogleSearch())],
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     quota_429_streak = 0  # 連續收到 quota 429 嘅次數
     for attempt in range(gcfg["max_retries"]):
@@ -626,21 +636,33 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
     if len(llm_result) > 2000:
         print(f"...（省略 {len(llm_result) - 2000} 字元）")
     if grounding_urls:
-        source_domains = count_source_domains(grounding_urls)
-        print(f"🔗 Grounding 來源: {len(grounding_urls)} 個 URL，"
-              f"{len(source_domains)} 個獨立新聞源")
+        source_domains, vertex_count = count_source_domains(grounding_urls)
+        total_sources = len(source_domains) + vertex_count
+        print(f"🔗 Grounding 來源: {len(grounding_urls)} 個 URL，{total_sources} 個搜尋結果")
         if source_domains:
             print(f"📡 新聞源: {', '.join(source_domains)}")
+        elif vertex_count:
+            print(f"📡 新聞源: {vertex_count} 個 Google 搜尋結果（導流連結）")
     else:
         # fallback：grounding metadata 為空時，從回應文本提取 vertexaisearch 連結
         text_urls = re.findall(r'https?://vertexaisearch\.cloud\.google\.com/[^\s\)\]]+', llm_result)
         if text_urls:
             grounding_urls = [("來源", u) for u in text_urls]
-            source_domains = ["vertexaisearch.cloud.google.com"]
+            source_domains = []
+            vertex_count = len(text_urls)
             print(f"🔗 Grounding 來源（從文本提取）: {len(text_urls)} 個搜尋連結")
         else:
             source_domains = []
+            vertex_count = 0
             print("⚠️ Gemini 冇返回任何 grounding URL（可能冇使用搜尋工具）")
+    # 組合來源摘要文字
+    total_sources = len(source_domains) + vertex_count
+    if source_domains:
+        source_summary = f"{len(source_domains)} 個新聞源：{', '.join(source_domains)}"
+    elif vertex_count:
+        source_summary = f"{vertex_count} 個 Google 搜尋結果"
+    else:
+        source_summary = ""
     # 檢查有冇實質內容
     has_section = "【板塊宏觀消息】" in llm_result or "【個股重大利好" in llm_result
     has_news_emoji = "📰" in llm_result
@@ -772,8 +794,8 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
     final_text = "\n\n".join(parts)
     final_text = format_links(final_text)
     # 附加搜尋來源統計
-    if source_domains:
-        final_text += f"\n\n---\n📡 本次搜尋咗 {len(source_domains)} 個新聞源：{', '.join(source_domains)}"
+    if source_summary:
+        final_text += f"\n\n---\n📡 本次搜尋咗 {source_summary}"
     send_feishu(final_text, config)
     save_cache(cache, config)
     return True
