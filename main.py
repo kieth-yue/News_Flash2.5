@@ -662,6 +662,39 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         source_summary = f"{vertex_count} 個 Google 搜尋結果"
     else:
         source_summary = ""
+    # 冇 grounding URL 又話無新聞 → 可能冇搜尋，重試一次
+    if total_sources == 0 and "📰" not in llm_result:
+        print("⚠️ Gemini 冇使用搜尋工具就答無新聞，重試一次...")
+        time.sleep(3)
+        retry_prompt = (
+            "🚨 你剛才冇使用 Google 搜尋工具！請立即使用 Google 搜尋工具，"
+            "搜尋港股最新嘅盈喜、業績、回購、增持、上調目標價等重大利好消息，"
+            "然後按照格式重新輸出。"
+        )
+        llm_result, grounding_urls, chat, quota_exhausted = gemini_call(retry_prompt, config, chat=chat)
+        if quota_exhausted:
+            return "quota_exhausted"
+        print(f"=== 重試回應 ({len(llm_result)} 字元) ===")
+        print(llm_result[:2000])
+        # 重新統計來源
+        if grounding_urls:
+            source_domains, vertex_count = count_source_domains(grounding_urls)
+            total_sources = len(source_domains) + vertex_count
+            if source_domains:
+                source_summary = f"{len(source_domains)} 個新聞源：{', '.join(source_domains)}"
+                print(f"📡 新聞源: {', '.join(source_domains)}")
+            elif vertex_count:
+                source_summary = f"{vertex_count} 個 Google 搜尋結果"
+                print(f"📡 新聞源: {vertex_count} 個 Google 搜尋結果（導流連結）")
+        else:
+            text_urls = re.findall(r'https?://vertexaisearch\.cloud\.google\.com/[^\s\)\]]+', llm_result)
+            if text_urls:
+                grounding_urls = [("來源", u) for u in text_urls]
+                source_domains = []
+                vertex_count = len(text_urls)
+                total_sources = vertex_count
+                source_summary = f"{vertex_count} 個 Google 搜尋結果"
+                print(f"🔗 Grounding 來源（從文本提取）: {len(text_urls)} 個搜尋連結")
     # 檢查有冇實質內容
     has_section = "【板塊宏觀消息】" in llm_result or "【個股重大利好" in llm_result
     has_news_emoji = "📰" in llm_result
