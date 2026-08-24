@@ -28,7 +28,7 @@ sessions:
 
   evening:
     start: "21:30"
-    end: "23:00"
+    end: "23:59"
     news_after: "today_16:00"            # 今日 16:00（收市後）
 
 # 啟動容錯分鐘數（cron 延遲時，喺 end 之後幾多分鐘內仍可啟動）
