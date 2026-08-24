@@ -6,7 +6,7 @@
 # ========== Gemini 模型設定 ==========
 gemini:
   model: "gemma-4-31b-it"
-  timeout_sec: 300        # 單次調用超時（秒）
+  timeout_sec: 180        # 單次調用超時（秒）
   max_retries: 3          # 失敗重試次數
   retry_wait_sec: 60      # 429 限流時等待秒數
 
