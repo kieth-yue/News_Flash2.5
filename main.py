@@ -50,7 +50,7 @@ TIME_FORBIDDEN_WORDS = [
 DEFAULT_CONFIG = {
     "gemini": {
         "model": "gemma-4-31b-it",
-        "timeout_sec": 180,
+        "timeout_sec": 500,
         "max_retries": 3,
         "retry_wait_sec": 60,
     },
@@ -469,7 +469,6 @@ def gemini_call(prompt, config, chat=None):
         temperature=0.2,
         system_instruction=SYSTEM_INSTRUCTION,
         tools=[types.Tool(google_search=types.GoogleSearch())],
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     quota_429_streak = 0  # 連續收到 quota 429 嘅次數
     for attempt in range(gcfg["max_retries"]):
