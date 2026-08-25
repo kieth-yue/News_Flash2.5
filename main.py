@@ -158,10 +158,11 @@ def calc_news_after(session_name, hkt, config):
     na_type = config["sessions"][session_name]["news_after"]
     if na_type == "last_trading_day_close":
         return get_last_trading_close(hkt)
-    elif na_type == "today_06:00":
-        return hkt.replace(hour=6, minute=0, second=0, microsecond=0)
-    elif na_type == "today_16:00":
-        return hkt.replace(hour=16, minute=0, second=0, microsecond=0)
+    # 支援 today_HH:MM 通用格式，例如 today_11:00、today_09:30
+    m = re.match(r'^today_(\d{1,2}):(\d{2})$', str(na_type))
+    if m:
+        return hkt.replace(hour=int(m.group(1)), minute=int(m.group(2)),
+                           second=0, microsecond=0)
     else:
         return hkt - timedelta(hours=24)
 def format_hkt(dt):
