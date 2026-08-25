@@ -1,8 +1,11 @@
 name: HK News Monitor v2
 on:
   schedule:
-    - cron: '2 23 * * 0-4'
+    # HKT 06:02 → UTC 22:02（前日）週日至四 = 週一至五 HKT
+    - cron: '2 22 * * 0-4'
+    # HKT 11:02 → UTC 03:02 週一至五
     - cron: '2 3 * * 1-5'
+    # HKT 21:32 → UTC 13:32 週一至五
     - cron: '32 13 * * 1-5'
   workflow_dispatch:
     inputs:
@@ -14,10 +17,10 @@ on:
 jobs:
   news_scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 300
     concurrency:
       group: hk-news-monitor-v2
-      cancel-in-progress: false   # ← 改呢度，唔好取消緊運行嘅 job
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
