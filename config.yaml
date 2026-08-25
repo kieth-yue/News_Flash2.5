@@ -23,7 +23,7 @@ sessions:
 
   midday:
     start: "11:00"
-    end: "13:20"
+    end: "14:30"
     news_after: "today_06:00"            # 今日 06:00
 
   evening:
