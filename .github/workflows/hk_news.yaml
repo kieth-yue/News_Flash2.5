@@ -1,14 +1,9 @@
 name: HK News Monitor v2
-
 on:
   schedule:
-    # HKT 07:02 → UTC 23:02（前日）週日至四 = 週一至五 HKT
     - cron: '2 23 * * 0-4'
-    # HKT 11:02 → UTC 03:02 週一至五
     - cron: '2 3 * * 1-5'
-    # HKT 21:32 → UTC 13:32 週一至五
     - cron: '32 13 * * 1-5'
-
   workflow_dispatch:
     inputs:
       force_run:
@@ -16,26 +11,20 @@ on:
         required: false
         type: boolean
         default: false
-
 jobs:
   news_scan:
     runs-on: ubuntu-latest
     timeout-minutes: 240
-
     concurrency:
       group: hk-news-monitor-v2
-      cancel-in-progress: true
-
+      cancel-in-progress: false   # ← 改呢度，唔好取消緊運行嘅 job
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      # 跨 Job 去重快取（restore-keys 自動恢復最近一次，post-action 自動保存）
       - name: Restore push cache
         uses: actions/cache@v4
         with:
@@ -43,12 +32,10 @@ jobs:
           key: hk-news-v2-${{ github.run_id }}
           restore-keys: |
             hk-news-v2-
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml>=6.0 google-genai>=1.0.0 requests>=2.32.0
-
       - name: Run news monitor
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
