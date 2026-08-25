@@ -17,7 +17,7 @@ gemini:
 #   晚間 21:30 HKT → 13:32 UTC        → cron: '32 13 * * 1-5'
 sessions:
   morning:
-    start: "07:00"
+    start: "06:00"
     end: "10:30"
     news_after: "last_trading_day_close"  # 上個交易日 16:00（週一自動追溯至週五）
 
