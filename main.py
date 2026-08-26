@@ -22,7 +22,16 @@ from google import genai
 from google.genai import types
 import requests
 from urllib.parse import urlparse
+from opencc import OpenCC
 # ============================================================
+# 簡體→繁體（香港）轉換器
+# ============================================================
+_cc = OpenCC('s2hk')
+def to_traditional(text):
+    """將所有文字統一轉為繁體中文（香港用字），確保飛書輸出一致"""
+    if not text:
+        return text
+    return _cc.convert(text)
 # 常量
 # ============================================================
 HKT = timezone(timedelta(hours=8))
@@ -409,7 +418,9 @@ def count_source_domains(grounding_urls):
         except Exception: continue
     return sorted(domains), vertex_count
 SYSTEM_INSTRUCTION = (
-    "你係港股新聞分析員。你必須嚴格按照用戶指定嘅格式輸出，使用繁體中文。"
+    "你係港股新聞分析員。你必須嚴格按照用戶指定嘅格式輸出，"
+    "所有內容（包括新聞標題、摘要、來源名稱）必須一律使用繁體中文（香港用字），"
+    "即使新聞原文係簡體中文，都必須轉換為繁體中文先可以輸出。"
     "禁止使用 Markdown 標題（**文字**）、項目符號（* 或 -）、編號列表、英文分析散文。"
     "你嘅回應只能包含指定嘅 section 標記（=== 【...】 ===）同 📰 新聞條目，"
     "或者「當前時段無符合條件」聲明，不得有任何前言、分析、解釋、後語。"
@@ -541,6 +552,7 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
     )
     llm_result, grounding_urls, chat, quota_exhausted = gemini_call(prompt, config)
     if quota_exhausted: return "quota_exhausted"
+    llm_result = to_traditional(llm_result)
     print(f"=== Gemini 回應 ({len(llm_result)} 字元) ===")
     print(llm_result[:2000])
     if grounding_urls:
@@ -572,6 +584,7 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         )
         llm_result, grounding_urls, chat, quota_exhausted = gemini_call(followup, config, chat=None)
         if quota_exhausted: return "quota_exhausted"
+        llm_result = to_traditional(llm_result)
         print(f"=== 重試回應 ({len(llm_result)} 字元) ===")
         print(llm_result[:2000])
         if grounding_urls:
