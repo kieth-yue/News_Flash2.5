@@ -66,7 +66,7 @@ DEFAULT_CONFIG = {
     "sessions": {
         "morning": {"start": "07:00", "end": "10:00", "news_after": "last_trading_day_close"},
         "midday": {"start": "11:00", "end": "13:00", "news_after": "today_06:00"},
-        "evening": {"start": "21:30", "end": "23:00", "news_after": "today_16:00"},
+        "evening": {"start": "21:30", "end": "02:00", "news_after": "today_16:00"},
     },
     "grace_minutes": 30,
     "scan": {"interval_min_min": 8, "interval_min_max": 10},
@@ -121,14 +121,31 @@ def get_last_trading_close(hkt):
     return datetime(base_date.year, base_date.month, base_date.day, 16, 0, tzinfo=HKT)
 def get_session(hkt, config):
     grace = config.get("grace_minutes", 30)
+    # 第一輪：精確匹配（喺 session 實際時間範圍內）
+    for name, s in config["sessions"].items():
+        sh, sm = map(int, s["start"].split(":"))
+        eh, em = map(int, s["end"].split(":"))
+        start_dt = hkt.replace(hour=sh, minute=sm, second=0, microsecond=0)
+        end_dt = hkt.replace(hour=eh, minute=em, second=0, microsecond=0)
+        if eh <= sh:  # 跨午夜
+            if hkt >= start_dt or hkt <= end_dt:
+                return name
+        else:
+            if start_dt <= hkt <= end_dt:
+                return name
+    # 第二輪：grace 寬限期匹配
     for name, s in config["sessions"].items():
         sh, sm = map(int, s["start"].split(":"))
         eh, em = map(int, s["end"].split(":"))
         start_dt = hkt.replace(hour=sh, minute=sm, second=0, microsecond=0)
         end_dt = hkt.replace(hour=eh, minute=em, second=0, microsecond=0)
         grace_end = end_dt + timedelta(minutes=grace)
-        if start_dt <= hkt <= grace_end:
-            return name
+        if eh <= sh:  # 跨午夜
+            if hkt >= start_dt or hkt <= grace_end:
+                return name
+        else:
+            if start_dt <= hkt <= grace_end:
+                return name
     return None
 def is_session_over(session_name, hkt, config):
     s = config["sessions"].get(session_name)
@@ -136,11 +153,18 @@ def is_session_over(session_name, hkt, config):
         return True
     sh, sm = map(int, s["start"].split(":"))
     eh, em = map(int, s["end"].split(":"))
-    # 跨午夜保護：如果當前小時早過 session 開始小時，即係過咗午夜，session 已結束
-    if hkt.hour < sh:
-        return True
     end_dt = hkt.replace(hour=eh, minute=em, second=0, microsecond=0)
-    return hkt >= end_dt
+    if eh <= sh:  # 跨午夜 session（如 21:30-02:00）
+        if hkt.hour >= sh:
+            # 晚間時段（21:00-23:59），session 剛開始，未結束
+            return False
+        # 凌晨時段：過咗 end 時間就結束
+        return hkt >= end_dt
+    else:
+        # 普通 session
+        if hkt.hour < sh:
+            return True
+        return hkt >= end_dt
 def get_force_run_session(hkt):
     """FORCE_RUN 模式：根據當前時間推斷 session。
     週末一律當 morning（用 last_trading_day_close → 上週五 16:00）。
@@ -149,11 +173,13 @@ def get_force_run_session(hkt):
         return "morning"
     h, m = hkt.hour, hkt.minute
     t = h * 60 + m
-    if t < 10 * 60:        # 00:00 - 10:00 → 早市規則
+    if t < 2 * 60:         # 00:00 - 02:00 → 晚間延續（新聞從尋日16:00開始）
+        return "evening"
+    elif t < 10 * 60:      # 02:00 - 10:00 → 早市規則
         return "morning"
-    elif t < 16 * 60:      # 10:00 - 16:00 → 午市規則（新聞從今日06:00開始）
+    elif t < 16 * 60:      # 10:00 - 16:00 → 午市規則
         return "midday"
-    else:                  # 16:00 - 24:00 → 晚間規則（新聞從今日16:00開始）
+    else:                  # 16:00 - 24:00 → 晚間規則
         return "evening"
 def calc_news_after(session_name, hkt, config):
     """計算新聞有效起始時間。
@@ -170,8 +196,12 @@ def calc_news_after(session_name, hkt, config):
     # 支援 today_HH:MM 通用格式，例如 today_11:00、today_09:30
     m = re.match(r'^today_(\d{1,2}):(\d{2})$', str(na_type))
     if m:
-        return hkt.replace(hour=int(m.group(1)), minute=int(m.group(2)),
-                           second=0, microsecond=0)
+        news_after = hkt.replace(hour=int(m.group(1)), minute=int(m.group(2)),
+                                 second=0, microsecond=0)
+        # 跨午夜修正：如果目標時間喺未來（例如 01:00 問 today_16:00），減一日
+        if news_after > hkt:
+            news_after -= timedelta(days=1)
+        return news_after
     else:
         return hkt - timedelta(hours=24)
 def format_hkt(dt):
@@ -182,9 +212,9 @@ def get_time_injection(now_hkt, news_after, session_name):
     if is_wknd:
         s_name = "週末掃描（上週五收市後至今）"
     else:
-        session_names = {"morning": "早市時段（07:00-10:00）",
-                         "midday": "午市時段（11:00-13:00）",
-                         "evening": "晚間時段（21:30-23:00）"}
+        session_names = {"morning": "早市時段（06:00-11:00）",
+                         "midday": "午市時段（11:00-15:00）",
+                         "evening": "晚間時段（21:30-02:00）"}
         s_name = session_names.get(session_name, "測試模式")
     return (
         f"\n---\n"
