@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
         "evening": {"start": "21:30", "end": "03:00", "news_after": "today_16:00"},
     },
     "grace_minutes": 30,
-    "scan": {"interval_min_min": 4, "interval_min_max": 6},
+    "scan": {"interval_min_min": 3, "interval_min_max": 6},
     "filters": {
         "max_stock_news": 5,
     },
