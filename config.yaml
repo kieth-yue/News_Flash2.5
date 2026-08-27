@@ -36,7 +36,7 @@ scan:
 # 注意：金額門檻、利好判定等全部由 Prompt 規則控制（Gemini 聯網判斷）
 # 代碼只做結構性驗證：時間範圍、去重、代號格式、連結
 filters:
-  max_stock_news: 5              # 每次最多推送幾多條個股
+  max_stock_news: 8              # 每次最多推送幾多條個股
 # ========== 去重 ==========
 dedup:
   cache_file: "push_cache.json"
