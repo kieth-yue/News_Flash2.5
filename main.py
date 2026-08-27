@@ -383,6 +383,27 @@ def add_macro_keyword(title, macro_cache, date_str):
     kw = list(extract_keywords(title))
     if kw: macro_cache.setdefault(date_str, []).append(kw)
 # ============================================================
+# 個股標題去重（防止同一單新聞被不同媒體轉載時重複推送）
+# ============================================================
+def normalize_stock_title(title):
+    """標準化標題：去除代號、括號、標點、空白，用於相似度比對"""
+    t = re.sub(r'[\(（]\d{4,5}[\)）]', '', title)
+    t = re.sub(r'\d{5}\.HK', '', t, flags=re.IGNORECASE)
+    t = re.sub(r'[^\w\u4e00-\u9fff]', '', t)
+    return t.lower()
+def is_duplicate_stock_title(title, code, pushed_titles):
+    """檢查同一隻股票嘅標題是否同已推送嘅相似"""
+    norm = normalize_stock_title(title)
+    if len(norm) < 6: return False
+    for old_code, old_norm in pushed_titles:
+        if old_code != code: continue
+        if norm in old_norm or old_norm in norm: return True
+        if len(norm) >= 8 and len(old_norm) >= 8:
+            shorter = min(len(norm), len(old_norm))
+            common = sum(1 for a, b in zip(norm, old_norm) if a == b)
+            if common / shorter >= 0.75: return True
+    return False
+# ============================================================
 # 進程鎖
 # ============================================================
 def acquire_lock():
@@ -552,7 +573,7 @@ def is_no_news(text):
 # ============================================================
 # 核心掃描
 # ============================================================
-def scan_once(session_name, turn_count, macro_pushed, config, prompts):
+def scan_once(session_name, turn_count, macro_pushed, stock_pushed, config, prompts):
     macro_prompt, stock_prompt = prompts
     now_hkt = get_hkt_now()
     date_str = now_hkt.strftime("%Y-%m-%d")
@@ -565,7 +586,13 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         "- 回應只能包含「=== 【板塊宏觀消息】 ===」同「=== 【個股重大利好】 ===」區塊\n"
         "- 每條新聞必須以 📰 開頭，逐行使用 📰🏷️⏰📌🔗💡 欄位\n"
         "- 禁止 Markdown 標題、項目符號、編號列表、英文分析散文\n"
-        "- 無新聞時直接輸出「當前時段無符合條件之板塊消息」或「當前時段無符合條件之重大利好」"
+        "- 無新聞時直接輸出「當前時段無符合條件之板塊消息」或「當前時段無符合條件之重大利好」\n"
+        "- 🚨 股票配對規則（極其重要）：🏷️ 股票嘅名稱同代號必須係新聞嘅主角，"
+        "並且必須喺新聞標題或正文中明確出現。嚴禁將一篇講述多隻股票嘅大市摘要/新聞合集"
+        "（如「港股公告精選」「夜期低水」「早知道」等）拆分為多條個股新聞，"
+        "除非該文章有獨立段落專門講述嗰隻股票並包含具體財務數據。"
+        "如果一篇文章同時提及幾隻股票但冇逐一詳述，只能揀最相關嘅一隻，或者全部唔輸出。\n"
+        "- 🚨 每條新聞嘅 🔗 連結必須指向該新聞嘅原始頁面，唔同新聞嚴禁共用同一個連結。"
     )
     if turn_count == 1 and macro_prompt:
         prompt = (f"{macro_prompt}\n\n---\n\n{stock_prompt}{time_info}"
@@ -627,17 +654,24 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         return False
     llm_result = normalize_stock_codes(llm_result)
     macro_text, stock_text = split_sections(llm_result)
-    real_urls = [uri for _, uri in grounding_urls if "vertexaisearch" not in uri] or [uri for _, uri in grounding_urls]
+    # 去重 URL，保持順序
+    raw_urls = [uri for _, uri in grounding_urls if "vertexaisearch" not in uri] or [uri for _, uri in grounding_urls]
+    real_urls = list(dict.fromkeys(raw_urls))
     url_idx = 0
+    used_urls = set()
     def get_url_for_entry(entry_text):
         nonlocal url_idx
         url = extract_url_from_entry(entry_text)
-        if url and "vertexaisearch" not in url and len(url) < 300: return url
-        if url_idx < len(real_urls):
+        if url and "vertexaisearch" not in url and len(url) < 300 and url not in used_urls:
+            used_urls.add(url)
+            return url
+        while url_idx < len(real_urls):
             u = real_urls[url_idx]
             url_idx += 1
-            return u
-        return url
+            if u not in used_urls:
+                used_urls.add(u)
+                return u
+        return url if url and "vertexaisearch" not in url else None
     # ---- 板塊消息處理 ----
     macro_entries = []
     for entry in parse_entries(macro_text):
@@ -652,7 +686,7 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         add_macro_keyword(title, cache["macro"], date_str)
     # ---- 個股消息處理 ----
     stock_entries = []
-    stock_dedup_info = []  # (dedup_key, title) 對應每個 entry，截斷後先寫入快取
+    stock_dedup_info = []  # (dedup_key, title, code, norm_title) 截斷後先寫入快取
     for entry in parse_entries(stock_text):
         title = extract_field(entry, "📰 新聞標題") or entry[:60]
         stock_field = extract_field(entry, "🏷️ 股票")
@@ -663,17 +697,22 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         if not valid or (news_time and (news_time < news_after or news_time > now_hkt + timedelta(minutes=10))): continue
         news_date = news_time.strftime("%Y-%m-%d") if news_time else date_str
         dedup_key = f"{code}|{news_date}"
+        # 三重去重：檔案快取 + 記憶體 set + 標題相似度
         if dedup_key in cache["stock"]: continue
+        if dedup_key in stock_pushed["keys"]: continue
+        if is_duplicate_stock_title(title, code, stock_pushed["titles"]): continue
         url = get_url_for_entry(entry)
         if url: entry = re.sub(r'🔗 連結：[\s\S]*?(?=\n[💡🏷️📰⏰📌]|\Z)', f"🔗 連結：{url}", entry, flags=re.MULTILINE)
         stock_entries.append(entry)
-        stock_dedup_info.append((dedup_key, title[:100]))
+        stock_dedup_info.append((dedup_key, title[:100], code, normalize_stock_title(title)))
     if len(stock_entries) > config["filters"]["max_stock_news"]:
         stock_entries = stock_entries[:config["filters"]["max_stock_news"]]
         stock_dedup_info = stock_dedup_info[:config["filters"]["max_stock_news"]]
     # 只將實際推送嘅新聞寫入去重快取，被截斷嘅保留俾下一輪
-    for dedup_key, short_title in stock_dedup_info:
+    for dedup_key, short_title, code, norm_title in stock_dedup_info:
         cache["stock"][dedup_key] = short_title
+        stock_pushed["keys"].add(dedup_key)
+        stock_pushed["titles"].append((code, norm_title))
     if not macro_entries and not stock_entries:
         save_cache(cache, config)
         return False
@@ -724,17 +763,18 @@ def main():
         return
     try:
         if run_mode == "one_shot":
-            try: scan_once(session_name, 1, set(), config, (macro_prompt, stock_prompt))
+            try: scan_once(session_name, 1, set(), {"keys": set(), "titles": []}, config, (macro_prompt, stock_prompt))
             except Exception as e: print(f"❌ 掃描異常: {str(e)[:300]}")
         elif run_mode == "long_run":
             turn = 0
             macro_pushed = set()
+            stock_pushed = {"keys": set(), "titles": []}
             while True:
                 turn += 1
                 turn_start = get_hkt_now()
                 print(f"\n{'─' * 50}\n--- Turn {turn} | {turn_start.strftime('%H:%M:%S')} HKT ---\n{'─' * 50}")
                 try:
-                    result = scan_once(session_name, turn, macro_pushed, config, (macro_prompt, stock_prompt))
+                    result = scan_once(session_name, turn, macro_pushed, stock_pushed, config, (macro_prompt, stock_prompt))
                     if result == "quota_exhausted":
                         print("\n🚫 Gemini 每日配額已用盡，提早結束 session")
                         break
