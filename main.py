@@ -652,6 +652,7 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         add_macro_keyword(title, cache["macro"], date_str)
     # ---- 個股消息處理 ----
     stock_entries = []
+    stock_dedup_info = []  # (dedup_key, title) 對應每個 entry，截斷後先寫入快取
     for entry in parse_entries(stock_text):
         title = extract_field(entry, "📰 新聞標題") or entry[:60]
         stock_field = extract_field(entry, "🏷️ 股票")
@@ -666,9 +667,13 @@ def scan_once(session_name, turn_count, macro_pushed, config, prompts):
         url = get_url_for_entry(entry)
         if url: entry = re.sub(r'🔗 連結：[\s\S]*?(?=\n[💡🏷️📰⏰📌]|\Z)', f"🔗 連結：{url}", entry, flags=re.MULTILINE)
         stock_entries.append(entry)
-        cache["stock"][dedup_key] = title[:100]
+        stock_dedup_info.append((dedup_key, title[:100]))
     if len(stock_entries) > config["filters"]["max_stock_news"]:
         stock_entries = stock_entries[:config["filters"]["max_stock_news"]]
+        stock_dedup_info = stock_dedup_info[:config["filters"]["max_stock_news"]]
+    # 只將實際推送嘅新聞寫入去重快取，被截斷嘅保留俾下一輪
+    for dedup_key, short_title in stock_dedup_info:
+        cache["stock"][dedup_key] = short_title
     if not macro_entries and not stock_entries:
         save_cache(cache, config)
         return False
