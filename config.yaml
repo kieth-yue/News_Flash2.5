@@ -1,47 +1,56 @@
-# ============================================
-# 港股新聞監控系統配置
-# 修改後即時生效，無需改動 main.py
-# ============================================
-# ========== Gemini 模型設定 ==========
-gemini:
-  model: "gemma-4-31b-it"
-  timeout_sec: 180        # 單次調用超時（秒），3分鐘無回應即重試
-  max_retries: 3          # 失敗重試次數
-  retry_wait_sec: 30      # 重試等待秒數（遞增：30→60）
-# ========== 運行時段（香港時間 HKT）==========
-# cron 觸發時間（UTC）：
-#   早市 06:02 HKT → 22:02 UTC（前日）→ cron: '2 22 * * 0-4'
-#   午市 11:02 HKT → 03:02 UTC        → cron: '2 3 * * 1-5'
-#   晚間 21:32 HKT → 13:32 UTC        → cron: '32 13 * * 1-5'
-sessions:
-  morning:
-    start: "06:00"
-    end: "11:00"
-    news_after: "last_trading_day_close"  # 上個交易日 16:00（週一自動追溯至週五）
-  midday:
-    start: "11:00"
-    end: "15:00"
-    news_after: "today_10:30"            # 今日 10:30（對接早市結束，無縫隙）
-  evening:
-    start: "21:30"
-    end: "03:00"
-    news_after: "today_16:00"            # 今日 16:00（跨午夜自動追溯至尋日）
-# 啟動容錯分鐘數（cron 延遲時，喺 end 之後幾多分鐘內仍可啟動）
-grace_minutes: 30
-# ========== 掃描頻率 ==========
-scan:
-  interval_min_min: 4     # 最短休眠（分鐘）
-  interval_min_max: 7     # 最長休眠（分鐘）
-# ========== 新聞過濾 ==========
-# 注意：金額門檻、利好判定等全部由 Prompt 規則控制（Gemini 聯網判斷）
-# 代碼只做結構性驗證：時間範圍、去重、代號格式、連結
-filters:
-  max_stock_news: 8              # 每次最多推送幾多條個股
-# ========== 去重 ==========
-dedup:
-  cache_file: "push_cache.json"
-  expire_days: 2           # 快取記錄保留日數
-# ========== 飛書卡片 ==========
-feishu:
-  card_title: "📊 港股新聞監控快訊"
-  card_color: "wathet"     # 淺藍色
+name: HK News Monitor v2
+on:
+  schedule:
+    # HKT 06:02 → UTC 22:02（前日）週日至四 = 週一至五 HKT
+    - cron: '2 22 * * 0-4'
+    # HKT 06:20 → UTC 22:20（前日）備用，防止主 cron 漏跑
+    - cron: '20 22 * * 0-4'
+    # HKT 11:02 → UTC 03:02 週一至五
+    - cron: '2 3 * * 1-5'
+    # HKT 11:20 → UTC 03:20 備用
+    - cron: '20 3 * * 1-5'
+    # HKT 21:32 → UTC 13:32 週一至五
+    - cron: '32 13 * * 1-5'
+    # HKT 21:50 → UTC 13:50 備用
+    - cron: '50 13 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: '強制運行（忽略週末同時間窗口，即時跑一次測試用）'
+        required: false
+        type: boolean
+        default: false
+jobs:
+  news_scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: hk-news-monitor-v2
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore push cache
+        uses: actions/cache@v4
+        with:
+          path: push_cache.json
+          key: hk-news-v2-${{ github.run_id }}
+          restore-keys: |
+            hk-news-v2-
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml>=6.0 google-genai>=1.0.0 requests>=2.32.0 opencc-python-reimplemented>=0.1.7
+      - name: Run news monitor
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
+          HK_NEWS_PROMPT_MACRO: ${{ vars.HK_NEWS_PROMPT_MACRO }}
+          HK_NEWS_PROMPT_STOCK: ${{ vars.HK_NEWS_PROMPT_STOCK }}
+          FORCE_RUN: ${{ github.event.inputs.force_run }}
+        run: python main.py
