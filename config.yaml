@@ -5,9 +5,9 @@
 # ========== Gemini 模型設定 ==========
 gemini:
   model: "gemma-4-31b-it"
-  timeout_sec: 500        # 單次調用超時（秒）
+  timeout_sec: 180        # 單次調用超時（秒）
   max_retries: 3          # 失敗重試次數
-  retry_wait_sec: 60      # 429 限流時等待秒數
+  retry_wait_sec: 30      # 429 限流時等待秒數
 # ========== 運行時段（香港時間 HKT）==========
 # cron 觸發時間（UTC）：
 #   早市 06:02 HKT → 22:02 UTC（前日）→ cron: '2 22 * * 0-4'
