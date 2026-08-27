@@ -3,10 +3,16 @@ on:
   schedule:
     # HKT 06:02 → UTC 22:02（前日）週日至四 = 週一至五 HKT
     - cron: '2 22 * * 0-4'
+    # HKT 06:20 → UTC 22:20（前日）備用，防止主 cron 漏跑
+    - cron: '20 22 * * 0-4'
     # HKT 11:02 → UTC 03:02 週一至五
     - cron: '2 3 * * 1-5'
+    # HKT 11:20 → UTC 03:20 備用
+    - cron: '20 3 * * 1-5'
     # HKT 21:32 → UTC 13:32 週一至五
     - cron: '32 13 * * 1-5'
+    # HKT 21:50 → UTC 13:50 備用
+    - cron: '50 13 * * 1-5'
   workflow_dispatch:
     inputs:
       force_run:
@@ -17,7 +23,7 @@ on:
 jobs:
   news_scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 360
     concurrency:
       group: hk-news-monitor-v2
       cancel-in-progress: false
