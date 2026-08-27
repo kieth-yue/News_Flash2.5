@@ -24,7 +24,7 @@ sessions:
     news_after: "today_10:30"            # 今日 10:30（對接早市結束，無縫隙）
   evening:
     start: "21:30"
-    end: "02:00"
+    end: "03:00"
     news_after: "today_16:00"            # 今日 16:00（跨午夜自動追溯至尋日）
 # 啟動容錯分鐘數（cron 延遲時，喺 end 之後幾多分鐘內仍可啟動）
 grace_minutes: 30
