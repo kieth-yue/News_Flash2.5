@@ -66,7 +66,7 @@ DEFAULT_CONFIG = {
     "sessions": {
         "morning": {"start": "07:00", "end": "10:00", "news_after": "last_trading_day_close"},
         "midday": {"start": "11:00", "end": "13:00", "news_after": "today_06:00"},
-        "evening": {"start": "21:30", "end": "02:00", "news_after": "today_16:00"},
+        "evening": {"start": "21:30", "end": "03:00", "news_after": "today_16:00"},
     },
     "grace_minutes": 30,
     "scan": {"interval_min_min": 8, "interval_min_max": 10},
@@ -154,7 +154,7 @@ def is_session_over(session_name, hkt, config):
     sh, sm = map(int, s["start"].split(":"))
     eh, em = map(int, s["end"].split(":"))
     end_dt = hkt.replace(hour=eh, minute=em, second=0, microsecond=0)
-    if eh <= sh:  # 跨午夜 session（如 21:30-02:00）
+    if eh <= sh:  # 跨午夜 session（如 21:30-03:00）
         if hkt.hour >= sh:
             # 晚間時段（21:00-23:59），session 剛開始，未結束
             return False
@@ -173,9 +173,9 @@ def get_force_run_session(hkt):
         return "morning"
     h, m = hkt.hour, hkt.minute
     t = h * 60 + m
-    if t < 2 * 60:         # 00:00 - 02:00 → 晚間延續（新聞從尋日16:00開始）
+    if t < 3 * 60:         # 00:00 - 03:00 → 晚間延續（新聞從尋日16:00開始）
         return "evening"
-    elif t < 10 * 60:      # 02:00 - 10:00 → 早市規則
+    elif t < 10 * 60:      # 03:00 - 10:00 → 早市規則
         return "morning"
     elif t < 16 * 60:      # 10:00 - 16:00 → 午市規則
         return "midday"
@@ -214,7 +214,7 @@ def get_time_injection(now_hkt, news_after, session_name):
     else:
         session_names = {"morning": "早市時段（06:00-11:00）",
                          "midday": "午市時段（11:00-15:00）",
-                         "evening": "晚間時段（21:30-02:00）"}
+                         "evening": "晚間時段（21:30-03:00）"}
         s_name = session_names.get(session_name, "測試模式")
     return (
         f"\n---\n"
