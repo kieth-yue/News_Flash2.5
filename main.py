@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
         "evening": {"start": "21:30", "end": "03:00", "news_after": "today_16:00"},
     },
     "grace_minutes": 30,
-    "scan": {"interval_min_min": 3, "interval_min_max": 6},
+    "scan": {"interval_min_min": 4, "interval_min_max": 7},
     "filters": {
         "max_stock_news": 5,
     },
@@ -519,8 +519,8 @@ def gemini_call(prompt, config, chat=None):
                 time.sleep(wait)
             else:
                 print(f"❌ Gemini 調用最終失敗: {str(e)[:200]}")
-                return "", [], chat, False
-    return "", [], chat, False
+                return None, [], chat, False
+    return None, [], chat, False
 # ============================================================
 # 新聞解析
 # ============================================================
@@ -609,6 +609,9 @@ def scan_once(session_name, turn_count, macro_pushed, stock_pushed, config, prom
     )
     llm_result, grounding_urls, chat, quota_exhausted = gemini_call(prompt, config)
     if quota_exhausted: return "quota_exhausted"
+    if llm_result is None:
+        print("⏭️ 伺服器失敗，跳過本輪，等待下一輪")
+        return False
     llm_result = to_traditional(llm_result)
     print(f"=== Gemini 回應 ({len(llm_result)} 字元) ===")
     print(llm_result[:2000])
@@ -641,6 +644,9 @@ def scan_once(session_name, turn_count, macro_pushed, stock_pushed, config, prom
         )
         llm_result, grounding_urls, chat, quota_exhausted = gemini_call(followup, config, chat=None)
         if quota_exhausted: return "quota_exhausted"
+        if llm_result is None:
+            print("⏭️ 重試都係失敗，跳過本輪")
+            return False
         llm_result = to_traditional(llm_result)
         print(f"=== 重試回應 ({len(llm_result)} 字元) ===")
         print(llm_result[:2000])
