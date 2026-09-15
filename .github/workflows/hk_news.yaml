@@ -1,18 +1,18 @@
 name: HK News Monitor v2
 on:
   schedule:
-    # HKT 06:02 → UTC 22:02（前日）週日至四 = 週一至五 HKT
-    - cron: '2 22 * * 0-4'
-    # HKT 06:20 → UTC 22:20（前日）備用，防止主 cron 漏跑
-    - cron: '20 22 * * 0-4'
-    # HKT 11:02 → UTC 03:02 週一至五
-    - cron: '2 3 * * 1-5'
-    # HKT 11:20 → UTC 03:20 備用
-    - cron: '20 3 * * 1-5'
-    # HKT 21:32 → UTC 13:32 週一至五
-    - cron: '32 13 * * 1-5'
-    # HKT 21:50 → UTC 13:50 備用
-    - cron: '50 13 * * 1-5'
+    # ===== 早市 session 06:00-11:00 HKT（UTC 前日 22:xx，週日至四）=====
+    - cron: '7 22 * * 0-4'    # HKT 06:07
+    - cron: '25 22 * * 0-4'   # HKT 06:25 備用
+    - cron: '47 22 * * 0-4'   # HKT 06:47 最後備用
+    # ===== 午市 session 11:00-15:00 HKT（UTC 03:xx，週一至五）=====
+    - cron: '7 3 * * 1-5'     # HKT 11:07
+    - cron: '25 3 * * 1-5'    # HKT 11:25 備用
+    - cron: '47 3 * * 1-5'    # HKT 11:47 最後備用
+    # ===== 晚間 session 21:30-03:00 HKT（UTC 13-14:xx，週一至五）=====
+    - cron: '37 13 * * 1-5'   # HKT 21:37
+    - cron: '55 13 * * 1-5'   # HKT 21:55 備用
+    - cron: '13 14 * * 1-5'   # HKT 22:13 最後備用
   workflow_dispatch:
     inputs:
       force_run:
