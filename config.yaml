@@ -44,4 +44,4 @@ dedup:
 # ========== 飛書卡片 ==========
 feishu:
   card_title: "📊 港股新聞監控快訊"
-  card_color: "wathet"     # 淺藍色
+  card_color: "blue"     # 藍色
