@@ -63,7 +63,7 @@ TIME_FORBIDDEN_WORDS = [
 # ============================================================
 DEFAULT_CONFIG = {
     "gemini": {
-        "model": "gemma-4-26b-a4b-it",
+        "model": "gemma-4-31b-it",
         "timeout_sec": 180,
         "max_retries": 3,
         "retry_wait_sec": 60,
