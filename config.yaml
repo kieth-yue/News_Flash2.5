@@ -4,7 +4,7 @@
 # ============================================
 # ========== Gemini 模型設定 ==========
 gemini:
-  model: "gemma-4-31b-it"
+  model: "gemma-4-26b-a4b-it"
   timeout_sec: 180        # 單次調用超時（秒），3分鐘無回應即重試
   max_retries: 3          # 失敗重試次數
   retry_wait_sec: 30      # 重試等待秒數（遞增：30→60）
