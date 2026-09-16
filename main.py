@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 港股新聞監控系統 v2 (雙軌並行優化版)
-- GitHub Actions 長駐掃描 + Gemma 4 31B 聯網 + 飛書卡片推送
+- GitHub Actions 長駐掃描 + gemma-4-31b-it 聯網 + 飛書卡片推送
 - 第一輪掃描：先獨立搜板塊，再獨立搜個股（保證命中率）
-- 後續輪次：盤中只集中火力搜個股
-- 週末機制：FORCE_RUN 一律從上週五 16:00 開始掃
-- 完美修復 Regex 正則表達式抓取問題
+- 恢復 Gemini 錯誤日誌輸出，防止靜默卡死
+- 恢復飛書卡片底部的搜尋來源統計
 """
 
 import os
@@ -65,8 +64,8 @@ TIME_FORBIDDEN_WORDS = [
 # ============================================================
 DEFAULT_CONFIG = {
     "gemini": {
-        "model": "gemma-4-31b-it", # 必須使用支援聯網的模型
-        "timeout_sec": 500,
+        "model": "gemma-4-31b-it",  # 建議使用主力版本以確保支援 GoogleSearch 聯網
+        "timeout_sec": 180,           # 降低超時至 3 分鐘，搜不到果斷重試
         "max_retries": 3,
         "retry_wait_sec": 60,
     },
@@ -376,11 +375,15 @@ def gemini_call(prompt, config, chat=None):
             return resp.text or "", extract_grounding_urls(resp), chat, False
         except Exception as e:
             if "exceeded your current quota" in str(e).lower(): return "", [], chat, True
+            
+            # 🚨 加入錯誤日誌：遇到問題即時印出，方便 Debug
+            print(f"⚠️ Gemini API 發生錯誤 (嘗試 {attempt+1}/{config['gemini']['max_retries']}): {str(e)[:300]}")
+            
             time.sleep(config["gemini"]["retry_wait_sec"])
     return None, [], chat, False
 
 # ============================================================
-# 新聞解析 (已修復 Regex)
+# 新聞解析
 # ============================================================
 def split_sections(text):
     macro_text, stock_text = "", ""
@@ -417,7 +420,7 @@ def parse_entry_time(entry):
     return None, False
 
 # ============================================================
-# 核心掃描 (已修復分拆兩次搜尋)
+# 核心掃描
 # ============================================================
 def scan_once(session_name, turn_count, macro_pushed, stock_pushed, config, prompts):
     macro_prompt, stock_prompt = prompts
@@ -529,11 +532,26 @@ def scan_once(session_name, turn_count, macro_pushed, stock_pushed, config, prom
         save_cache(cache, config)
         return False
 
+    # 🚨 組合飛書訊息與搜尋統計
+    source_domains, vertex_count = count_source_domains(grounding_urls)
+    if source_domains:
+        source_summary = f"{len(source_domains)} 個新聞源：{', '.join(source_domains)}"
+    elif vertex_count:
+        source_summary = f"{vertex_count} 個 Google 搜尋結果"
+    else:
+        source_summary = ""
+
     parts = []
     if macro_entries: parts.extend(["=== 【板塊宏觀消息】 ===", "\n\n".join(macro_entries)])
     if stock_entries: parts.extend(["=== 【個股重大利好】 ===", "\n\n".join(stock_entries)])
     
-    send_feishu(format_links("\n\n".join(parts)), config)
+    final_text = format_links("\n\n".join(parts))
+    
+    # 加入底部的搜尋來源統計
+    if source_summary:
+        final_text += f"\n\n---\n📡 本次搜尋咗 {source_summary}"
+        
+    send_feishu(final_text, config)
     save_cache(cache, config)
     return True
 
