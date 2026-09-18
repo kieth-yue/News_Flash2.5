@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 港股新聞監控系統 v2 (終極優化版)
-- GitHub Actions 長駐掃描 + Gemma 4 31B 聯網 + 飛書卡片推送
+- GitHub Actions 長駐掃描 + gemma-4-31b-it 聯網 + 飛書卡片推送
 - 板塊消息每 session 首輪推送，後續只掃個股
 - 去重：個股按「代號+日期」，板塊按「主題關鍵詞+日期」
 - 週末機制：FORCE_RUN 一律從上週五 16:00 開始掃
@@ -23,6 +23,7 @@ from google.genai import types
 import requests
 from urllib.parse import urlparse
 from opencc import OpenCC
+
 # ============================================================
 # 簡體→繁體（香港）轉換器
 # ============================================================
@@ -32,6 +33,7 @@ def to_traditional(text):
     if not text:
         return text
     return _cc.convert(text)
+
 # 常量
 # ============================================================
 HKT = timezone(timedelta(hours=8))
@@ -40,6 +42,7 @@ CONFIG_PATH = SCRIPT_DIR / "config.yaml"
 LOCK_FILE = SCRIPT_DIR / "run.lock"
 WEEKDAY_CN = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 WEEKDAY_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
 # 板塊標題去重停用詞
 MACRO_STOP_WORDS = set(
     "的了在是及與和等將於為對由有個中年月日上下不亦都而但又或被向從"
@@ -48,11 +51,13 @@ MACRO_STOP_WORDS = set(
     "今日昨日當前目前市場資金政策宏觀數據顯示預期維持持續進一步"
     "a the of to in on for and or with is are was were be been has have"
 )
+
 # 時間欄位禁止詞（出現即丟棄該條）
 TIME_FORBIDDEN_WORDS = [
     "估計", "未詳", "約定", "不詳", "預計時間", "暫定", "待定",
     "未提供", "未給出", "暫未", "不確定", "unknown",
 ]
+
 # ============================================================
 # 配置加載
 # ============================================================
@@ -76,6 +81,7 @@ DEFAULT_CONFIG = {
     "dedup": {"cache_file": "push_cache.json", "expire_days": 2},
     "feishu": {"card_title": "📊 港股新聞監控快訊", "card_color": "wathet"},
 }
+
 def load_config():
     """加載 config.yaml，缺失欄位用默認值補齊"""
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
@@ -93,14 +99,17 @@ def load_config():
     else:
         print(f"⚠️ 找不到 config.yaml，使用默認配置")
     return cfg
+
 # ============================================================
 # 時間工具
 # ============================================================
 def get_hkt_now():
     return datetime.now(HKT)
+
 def is_weekend(hkt=None):
     hkt = hkt or get_hkt_now()
     return hkt.weekday() >= 5
+
 def get_last_trading_close(hkt):
     """返回最近一個交易日嘅 16:00 HKT。
     週一 → 上週五（3 日前）
@@ -119,6 +128,7 @@ def get_last_trading_close(hkt):
         days_back = 1
     base_date = (hkt - timedelta(days=days_back)).date()
     return datetime(base_date.year, base_date.month, base_date.day, 16, 0, tzinfo=HKT)
+
 def get_session(hkt, config):
     grace = config.get("grace_minutes", 30)
     # 第一輪：精確匹配（喺 session 實際時間範圍內）
@@ -147,6 +157,7 @@ def get_session(hkt, config):
             if start_dt <= hkt <= grace_end:
                 return name
     return None
+
 def is_session_over(session_name, hkt, config):
     s = config["sessions"].get(session_name)
     if not s:
@@ -165,6 +176,7 @@ def is_session_over(session_name, hkt, config):
         if hkt.hour < sh:
             return True
         return hkt >= end_dt
+
 def get_force_run_session(hkt):
     """FORCE_RUN 模式：根據當前時間推斷 session。
     週末一律當 morning（用 last_trading_day_close → 上週五 16:00）。
@@ -181,6 +193,7 @@ def get_force_run_session(hkt):
         return "midday"
     else:                  # 16:00 - 24:00 → 晚間規則
         return "evening"
+
 def calc_news_after(session_name, hkt, config):
     """計算新聞有效起始時間。
     週末（星期六/日）一律從上週五 16:00 開始，無論邊個 session。
@@ -204,8 +217,10 @@ def calc_news_after(session_name, hkt, config):
         return news_after
     else:
         return hkt - timedelta(hours=24)
+
 def format_hkt(dt):
     return dt.strftime("%Y-%m-%d %H:%M HKT")
+
 def get_time_injection(now_hkt, news_after, session_name):
     wd_cn = WEEKDAY_CN[now_hkt.weekday()]
     is_wknd = now_hkt.weekday() >= 5
@@ -230,6 +245,7 @@ def get_time_injection(now_hkt, news_after, session_name):
         f"- 禁止使用「估計」「未詳」「約定時間」「待定」等不確定表述\n"
         f"- 時間無法確定嘅新聞直接捨棄，不要輸出\n"
     )
+
 # ============================================================
 # 飛書推送
 # ============================================================
@@ -237,6 +253,7 @@ def gen_feishu_sign(timestamp, secret):
     string_to_sign = f"{timestamp}\n{secret}"
     hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
     return base64.b64encode(hmac_code).decode("utf-8")
+
 def send_feishu(raw_text, config):
     fs = config["feishu"]
     webhook = os.getenv("FEISHU_WEBHOOK", "")
@@ -282,6 +299,7 @@ def send_feishu(raw_text, config):
         if attempt < 2:
             time.sleep(3)
     return -1
+
 # ============================================================
 # 文本處理
 # ============================================================
@@ -289,6 +307,7 @@ def normalize_stock_codes(text):
     text = re.sub(r'HK\.(\d{1,5})(?!\d)', lambda m: f"{m.group(1).zfill(5)}.HK", text)
     text = re.sub(r'(?<!\d)(\d{1,5})\.HK(?!\d)', lambda m: f"{m.group(1).zfill(5)}.HK", text)
     return text
+
 def format_links(text):
     def link_replacer(m):
         urls = re.findall(r'https?://[^\s\)\]]+', m.group(0))
@@ -302,11 +321,13 @@ def format_links(text):
     text = re.sub(r'(?<![\(\]])https?://[^\s\)\]]+', raw_url_replacer, text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
+
 # ============================================================
 # 快取與去重
 # ============================================================
 def cache_path(config):
     return SCRIPT_DIR / config["dedup"]["cache_file"]
+
 def load_cache(config):
     path = cache_path(config)
     if not path.exists():
@@ -324,12 +345,14 @@ def load_cache(config):
             return data
     except Exception:
         return {"stock": {}, "macro": {}}
+
 def save_cache(cache, config):
     try:
         with open(cache_path(config), "w", encoding="utf-8") as f:
             json.dump(cache, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"⚠️ 寫入快取失敗: {e}")
+
 def cleanup_cache(cache, config):
     expire_days = config["dedup"]["expire_days"]
     cutoff = (get_hkt_now() - timedelta(days=expire_days)).strftime("%Y-%m-%d")
@@ -342,6 +365,7 @@ def cleanup_cache(cache, config):
     total_expired += len(expired)
     if total_expired:
         print(f"🧹 清除 {total_expired} 條過期快取")
+
 MACRO_TOPIC_GROUPS = [
     {"油價", "原油", "布油", "美油", "石油", "霍爾木茲", "中東", "地緣", "停火", "美伊", "以色列", "伊朗", "也門", "海峽", "煉油", "天然氣"},
     {"加息", "減息", "降準", "利率", "美聯儲", "聯儲", "央行", "逆回購", "流動性", "通脹", "通膨", "CPI", "PPI", "寬鬆", "貨幣政策"},
@@ -350,6 +374,7 @@ MACRO_TOPIC_GROUPS = [
     {"新能源車", "電動車", "比亞迪", "充電", "鋰電", "光伏"},
     {"關稅", "貿易戰", "制裁", "出口管制", "貿易壁壘"},
 ]
+
 def extract_keywords(text):
     cleaned = re.sub(r'[^\w\u4e00-\u9fff]', ' ', text)
     keywords = set()
@@ -361,10 +386,12 @@ def extract_keywords(text):
             bg = segment[i:i + 2]
             if bg not in MACRO_STOP_WORDS: keywords.add(bg)
     return keywords
+
 def _topic_group(text):
     for i, group in enumerate(MACRO_TOPIC_GROUPS):
         if any(kw in text for kw in group): return i
     return -1
+
 def is_duplicate_macro(title, macro_cache, date_str):
     new_kw = extract_keywords(title)
     if not new_kw: return False
@@ -379,9 +406,11 @@ def is_duplicate_macro(title, macro_cache, date_str):
         if new_topic >= 0 and len(overlap) >= 2: return True
         if len(overlap) >= 3 and ratio >= 0.35: return True
     return False
+
 def add_macro_keyword(title, macro_cache, date_str):
     kw = list(extract_keywords(title))
     if kw: macro_cache.setdefault(date_str, []).append(kw)
+
 # ============================================================
 # 個股標題去重（防止同一單新聞被不同媒體轉載時重複推送）
 # ============================================================
@@ -391,6 +420,7 @@ def normalize_stock_title(title):
     t = re.sub(r'\d{5}\.HK', '', t, flags=re.IGNORECASE)
     t = re.sub(r'[^\w\u4e00-\u9fff]', '', t)
     return t.lower()
+
 def is_duplicate_stock_title(title, code, pushed_titles):
     """檢查同一隻股票嘅標題是否同已推送嘅相似"""
     norm = normalize_stock_title(title)
@@ -403,6 +433,7 @@ def is_duplicate_stock_title(title, code, pushed_titles):
             common = sum(1 for a, b in zip(norm, old_norm) if a == b)
             if common / shorter >= 0.75: return True
     return False
+
 # ============================================================
 # 進程鎖
 # ============================================================
@@ -423,10 +454,12 @@ def acquire_lock():
         return True
     except Exception:
         return False
+
 def release_lock():
     try:
         if LOCK_FILE.exists(): LOCK_FILE.unlink()
     except Exception: pass
+
 # ============================================================
 # Gemini 調用
 # ============================================================
@@ -437,8 +470,10 @@ def is_retryable_error(e):
         "timeout", "timed out", "deadline exceeded", "503", "502", "500", "unavailable",
         "server disconnected", "remoteprotocolerror", "connection reset", "connection error"
     ])
+
 def is_daily_quota_exhausted(e):
     return "exceeded your current quota" in str(e).lower()
+
 def extract_grounding_urls(response):
     urls = []
     try:
@@ -456,6 +491,7 @@ def extract_grounding_urls(response):
     except Exception as e:
         print(f"⚠️ 提取 grounding URL 失敗: {e}")
     return urls
+
 def count_source_domains(grounding_urls):
     domains = set()
     vertex_count = 0
@@ -468,6 +504,7 @@ def count_source_domains(grounding_urls):
             elif "google.com" not in domain: domains.add(domain)
         except Exception: continue
     return sorted(domains), vertex_count
+
 SYSTEM_INSTRUCTION = (
     "你係港股新聞分析員。你必須嚴格按照用戶指定嘅格式輸出，"
     "所有內容（包括新聞標題、摘要、來源名稱）必須一律使用繁體中文（香港用字），"
@@ -476,6 +513,7 @@ SYSTEM_INSTRUCTION = (
     "你嘅回應只能包含指定嘅 section 標記（=== 【...】 ===）同 📰 新聞條目，"
     "或者「當前時段無符合條件」聲明，不得有任何前言、分析、解釋、後語。"
 )
+
 _gemini_client = None
 def get_gemini_client(config):
     global _gemini_client
@@ -486,6 +524,7 @@ def get_gemini_client(config):
             http_options=types.HttpOptions(timeout=gcfg["timeout_sec"] * 1000),
         )
     return _gemini_client
+
 def gemini_call(prompt, config, chat=None):
     gcfg = config["gemini"]
     client = get_gemini_client(config)
@@ -521,6 +560,7 @@ def gemini_call(prompt, config, chat=None):
                 print(f"❌ Gemini 調用最終失敗: {str(e)[:200]}")
                 return None, [], chat, False
     return None, [], chat, False
+
 # ============================================================
 # 新聞解析
 # ============================================================
@@ -543,16 +583,20 @@ def split_sections(text):
         parts = text.split(macro_marker)
         macro_text = parts[1] if len(parts) > 1 else ""
     return macro_text.strip(), stock_text.strip()
+
 def parse_entries(section_text):
     if not section_text or "📰" not in section_text: return []
     raw_entries = re.split(r'(?=📰)', section_text)
     return [e.strip() for e in raw_entries if e.strip() and "📰" in e]
+
 def extract_field(entry, emoji):
     m = re.search(rf'{emoji}\s*[^\n：:]*[：:]\s*([^\n]*)', entry)
     return m.group(1).strip() if m else ""
+
 def extract_url_from_entry(entry):
     urls = re.findall(r'https?://[^\s\)\]]+', entry)
     return urls[0] if urls else ""
+
 def parse_entry_time(entry):
     m = re.search(r'⏰[^\n]*', entry)
     if not m: return None, False
@@ -566,10 +610,12 @@ def parse_entry_time(entry):
             return datetime(y, mo, d, h, mi, tzinfo=HKT), True
         except ValueError: return None, False
     return None, False
+
 def is_no_news(text):
     markers = ["無符合條件", "冇符合條件", "无符合条件", "無具催化力", "无具催化力",
                "沒有符合條件", "無重大", "无重大", "冇重大"]
     return any(kw in text for kw in markers)
+
 # ============================================================
 # 核心掃描
 # ============================================================
@@ -730,6 +776,7 @@ def scan_once(session_name, turn_count, macro_pushed, stock_pushed, config, prom
     send_feishu(final_text, config)
     save_cache(cache, config)
     return True
+
 # ============================================================
 # 主流程
 # ============================================================
@@ -795,5 +842,6 @@ def main():
                 time.sleep(sleep_sec)
     finally:
         release_lock()
+
 if __name__ == "__main__":
     main()
