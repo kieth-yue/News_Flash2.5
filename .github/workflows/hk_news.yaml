@@ -1,14 +1,19 @@
 name: HK News Monitor v2
 on:
   schedule:
-    # HKT 06:02 → UTC 22:07（前日）週日至四 = 週一至五 HKT
+    # 🌅 早市：HKT 06:08 → UTC 22:08（前日）週日至四 = 週一至五早市 HKT
     - cron: '8 22 * * 0-4'
-    # HKT 11:02 → UTC 03:02 週一至五
+    
+    # ☀️ 午市：HKT 11:02 → UTC 03:02 週一至五 HKT
     - cron: '2 3 * * 1-5'
-    # HKT 11:20 → UTC 03:20 備用
+    # ☀️ 午市 (備用)：HKT 11:20 → UTC 03:20 
     - cron: '20 3 * * 1-5'
-    # HKT 21:38 → UTC 13:38 週一至五
-    - cron: '38 13 * * 1-5'
+    
+    # 🌙 晚間：HKT 21:38 → UTC 13:38 週日至五 (對應香港星期日晚至五晚，完美兼顧開市準備與週末補漏)
+    - cron: '38 13 * * 0-5'
+    # 🌙 晚間 (備用)：HKT 21:55 → UTC 13:55 週日至五
+    - cron: '55 13 * * 0-5'
+    
   workflow_dispatch:
     inputs:
       force_run:
@@ -48,11 +53,11 @@ jobs:
           
       - name: Run news monitor
         env:
-          PYTHONUNBUFFERED: 1     # 🚨 已加入：強制 Python 即時輸出日誌，不作緩衝保留
+          PYTHONUNBUFFERED: 1     # 🚨 強制 Python 即時輸出日誌，不作緩衝保留
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
           HK_NEWS_PROMPT_MACRO: ${{ vars.HK_NEWS_PROMPT_MACRO }}
           HK_NEWS_PROMPT_STOCK: ${{ vars.HK_NEWS_PROMPT_STOCK }}
           FORCE_RUN: ${{ github.event.inputs.force_run }}
-        run: python -u main.py    # 🚨 已加入：-u 參數，啟動 Unbuffered mode
+        run: python -u main.py    # 🚨 -u 參數，啟動 Unbuffered mode
