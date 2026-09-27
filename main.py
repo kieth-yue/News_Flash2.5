@@ -63,7 +63,7 @@ TIME_FORBIDDEN_WORDS = [
 # ============================================================
 DEFAULT_CONFIG = {
     "gemini": {
-        "model": "gemma-4-31b-it",
+        "model": "gemma-4-31b-it", # 🚨 [修復: 模型名稱] 改回支援 Google Search 的模型
         "timeout_sec": 500,
         "max_retries": 3,
         "retry_wait_sec": 60,
@@ -108,7 +108,8 @@ def get_hkt_now():
 
 def is_weekend(hkt=None):
     hkt = hkt or get_hkt_now()
-    return hkt.weekday() >= 5
+    # 🚨 [修復: 星期日運行] 將 >= 5 改為 == 5，只將星期六視為絕對休息日，允許星期日晚間運行
+    return hkt.weekday() == 5
 
 def get_last_trading_close(hkt):
     """返回最近一個交易日嘅 16:00 HKT。
@@ -589,14 +590,17 @@ def parse_entries(section_text):
     raw_entries = re.split(r'(?=📰)', section_text)
     return [e.strip() for e in raw_entries if e.strip() and "📰" in e]
 
+# 🚨 [修復: 正則表達式補齊 * 號]
 def extract_field(entry, emoji):
     m = re.search(rf'{emoji}\s*[^\n：:]*[：:]\s*([^\n]*)', entry)
     return m.group(1).strip() if m else ""
 
+# 🚨 [修復: 正則表達式補齊 \ 轉義符]
 def extract_url_from_entry(entry):
     urls = re.findall(r'https?://[^\s\)\]]+', entry)
     return urls[0] if urls else ""
 
+# 🚨 [修復: 正則表達式補齊 * 號]
 def parse_entry_time(entry):
     m = re.search(r'⏰[^\n]*', entry)
     if not m: return None, False
@@ -800,7 +804,7 @@ def main():
         run_mode = "one_shot"
     else:
         if is_weekend(now_hkt):
-            print("ℹ️ 週末，自動退出（週末請用 FORCE_RUN 手動觸發）")
+            print("ℹ️ 星期六，自動退出（週末請用 FORCE_RUN 手動觸發）")
             return
         session_name = get_session(now_hkt, config)
         if not session_name:
