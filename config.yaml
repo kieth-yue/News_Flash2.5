@@ -20,7 +20,7 @@ sessions:
     news_after: "last_trading_day_close"  # 上個交易日 16:00（週一自動追溯至週五）
   midday:
     start: "11:00"
-    end: "15:00"
+    end: "16:00"
     news_after: "today_10:30"            # 今日 10:30（對接早市結束，無縫隙）
   evening:
     start: "21:30"
