@@ -70,7 +70,8 @@ DEFAULT_CONFIG = {
     },
     "sessions": {
         "morning": {"start": "07:00", "end": "10:00", "news_after": "last_trading_day_close"},
-        "midday": {"start": "11:00", "end": "13:00", "news_after": "today_06:00"},
+        # ✅ 已修改：午市時段從 11:00-13:00 擴展為 11:00-16:00
+        "midday": {"start": "11:00", "end": "16:00", "news_after": "today_06:00"},
         "evening": {"start": "21:30", "end": "03:00", "news_after": "today_16:00"},
     },
     "grace_minutes": 30,
@@ -228,8 +229,9 @@ def get_time_injection(now_hkt, news_after, session_name):
     if is_wknd:
         s_name = "週末掃描（上週五收市後至今）"
     else:
+        # ✅ 已修改：午市顯示文字更新為 11:00-16:00
         session_names = {"morning": "早市時段（06:00-11:00）",
-                         "midday": "午市時段（11:00-15:00）",
+                         "midday": "午市時段（11:00-16:00）",
                          "evening": "晚間時段（21:30-03:00）"}
         s_name = session_names.get(session_name, "測試模式")
     return (
@@ -582,7 +584,7 @@ def split_sections(text):
         stock_text = parts[1] if len(parts) > 1 else ""
     elif macro_marker in text:
         parts = text.split(macro_marker)
-        macro_text = parts[1] if len(parts) > 1 else ""
+        macro_text = parts[1] if len(macro_parts) > 1 else ""
     return macro_text.strip(), stock_text.strip()
 
 def parse_entries(section_text):
